@@ -1,61 +1,68 @@
-#Dataset oluşturma
-
 import cv2
-from cvzone.HandTrackingModule import HandDetector
-import numpy as np
-import math
-import time
+import mediapipe as mp
+import os
 
+# Mediapipe kütüphanesini yükler
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
+
+# Elleri algılamak için bir Hands modeli oluşturur
+hands = mp_hands.Hands(static_image_mode=False, max_num_hands=2, min_detection_confidence=0.5)
+
+# Kamera açılır
 cap = cv2.VideoCapture(0)
-detector = HandDetector(maxHands=2) # İki el algılama
-offset = 20
-imgSize = 500
-counter = 0
 
-folder = "Sign-Language-Detection\Data\Konusmak"  # Oluşturulan resmin dosya yolu
+# Fotoğrafların kaydedileceği klasörü belirler
+output_folder = "captured_photos"
+os.makedirs(output_folder, exist_ok=True)
 
-# El kırpma
-while True:
-    success, img = cap.read()
-    hands, img = detector.findHands(img)
-    if hands:
-        for hand in hands:  # Her el için ayrı işlem yap
-            x, y, w, h = hand['bbox']
+# Fotoğraf sayacı
+photo_counter = 0
 
-            imgWhite = np.ones((imgSize, imgSize, 3), np.uint8) * 255
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        continue
 
-            imgCrop = img[y - offset:y + h + offset, x - offset:x + w + offset]
-            imgCropShape = imgCrop.shape
+    # Görüntüyü RGB'ye dönüştürür
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            aspectRatio = h / w
+    # Görüntüyü el işareti modeline verir
+    results = hands.process(frame_rgb)
 
-            if aspectRatio > 1:
-                k = imgSize / h
-                wCal = math.ceil(k * w)
-                imgResize = cv2.resize(imgCrop, (wCal, imgSize))
-                imgResizeShape = imgResize.shape
-                wGap = math.ceil((imgSize - wCal) / 2)
-                imgWhite[:, wGap: wCal + wGap] = imgResize
+    # Eğer el algılandıysa
+    if results.multi_hand_landmarks:
+        # Her el için işaretçilerin konumlarını çizer
+        for hand_landmarks in results.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
+            # Elin üstünde metin ekler
+            if hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP].x < hand_landmarks.landmark[
+                mp_hands.HandLandmark.MIDDLE_FINGER_TIP].x:
+                hand_side = "Sol El"
             else:
-                k = imgSize / w
-                hCal = math.ceil(k * h)
-                imgResize = cv2.resize(imgCrop, (imgSize, hCal))
-                imgResizeShape = imgResize.shape
-                hGap = math.ceil((imgSize - hCal))
-                imgWhite[hGap: hCal + hGap, :] = imgResize
+                hand_side = "Sag El"
 
-            cv2.imshow('ImageWhite', imgWhite)
+            text_size = cv2.getTextSize(hand_side, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+            cv2.putText(frame, hand_side, (int(hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP].x * frame.shape[1] - text_size[0] / 2),
+                                            int(hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP].y * frame.shape[0] - 50)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
-            # Resim kaydetme
-            if cv2.waitKey(1) & 0xFF == ord('s'):
-                counter += 1
-                cv2.imwrite(f'{folder}/Image_{counter}_{time.time()}.jpg', imgWhite)
-                print(f"Image_{counter} saved.")
+        # Bir tuşa basıldığında fotoğrafı kaydeder
+        if cv2.waitKey(1) & 0xFF == ord('c'):
+            photo_counter += 1
+            photo_name = f"photo_{photo_counter}.jpg"
+            photo_path = os.path.join(output_folder, photo_name)
+            cv2.imwrite(photo_path, frame)
+            print(f"Photo captured: {photo_name}")
 
-    cv2.imshow('Image', img)
-    key = cv2.waitKey(1)
-    
-    # Çıkış
-    if key == ord("q"):
+    # Görüntüyü gösterir
+    cv2.imshow('Hand Tracking', frame)
+
+    # 'q' tuşuna basıldığında çıkış yapar
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
+
+# Kaynakları serbest bırakır ve pencereleri kapatır
+cap.release()
+cv2.destroyAllWindows()
