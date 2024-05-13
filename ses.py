@@ -36,5 +36,5 @@ while True:
         
     # Check if 'q' key is pressed to break out of the loop
     key = cv2.waitKey(1)
-    if key & 0xFF == ord('q'):
+    if key & 0xFF == ord('a'):
         break
