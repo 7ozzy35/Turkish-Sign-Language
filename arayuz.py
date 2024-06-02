@@ -56,7 +56,7 @@ def open_category_window():
 # Cümleler penceresini aç
 def open_sentences_window():
     # test_cumle.py dosyasını çalıştır
-    run_test("Test/test_cumle.py")
+    run_test("ses.py")
 
     # subprocess kullanarak ses.py dosyasını aç
     call(["python", "ses.py"])
