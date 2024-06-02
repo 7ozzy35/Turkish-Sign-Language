@@ -1,40 +1,133 @@
 import speech_recognition as sr
 import cv2
+import customtkinter as ctk
+import mediapipe as mp
+from PIL import Image, ImageTk
 
-# Initialize the recognizer for speech-to-text
+# Konuşmayı metne dönüştürmek için tanıyıcıyı başlat
 r = sr.Recognizer()
 
-def speech_to_text_turkish():
-    """Performs speech-to-text recognition in Turkish."""
-    try:
-        # Use the microphone as source for input
-        with sr.Microphone() as source:
-            print("Sesinizi kaydediyorum...")  # Inform user about recording (Turkish)
+# Global değişkenler
+cap = None
+hands = None
+user_text = ""
+mp_hands = None
 
-            # Adjust for ambient noise to improve accuracy
+def speech_to_text_turkish():
+    """Türkçe metin dönüştürme işlemi yapar."""
+    global user_text
+    try:
+        # Giriş için mikrofonu kullan
+        with sr.Microphone() as source:
+            output_label.configure(text="Sesinizi kaydediyorum...")  # Kaydedildiğini kullanıcıya bildir (Türkçe)
+            root.update()
+
+            # Ortam gürültüsünü düzeltmek için ayarla
             r.adjust_for_ambient_noise(source, duration=0.2)
 
-            # Listen for user input
+            # Kullanıcı girişini dinle
             audio = r.listen(source)
 
-            # Recognize speech using Google Speech Recognition with Turkish model
+            # Türkçe modeliyle Google Konuşma Tanıma kullanarak konuşmayı tanı
             text = r.recognize_google(audio, language='tr-TR')
-            print("Dinledim: ", text)  # Display recognized text (Turkish)
-            return text.lower()
+            output_label.configure(text="Dinledim: " + text)  # Tanınan metni ekranda göster (Türkçe)
+            root.update()
+            user_text = text.lower()
 
     except sr.RequestError as e:
-        print("İstek işlenemedi; {0}".format(e))  # Error message in Turkish
-        return None
+        output_label.configure(text="İstek işlenemedi; {0}".format(e))  # Hata mesajını göster (Türkçe)
+        root.update()
+        user_text = None
     except sr.UnknownValueError:
-        print("Bilinmeyen hata oluştu")  # Generic error message in Turkish
-        return None
+        output_label.configure(text="Bilinmeyen hata oluştu")  # Genel hata mesajını göster (Türkçe)
+        root.update()
+        user_text = None
 
-while True:
-    user_text = speech_to_text_turkish()
-    if user_text:
-        print("Kullanıcı dedi ki:", user_text)  # Print the recognized text
+def on_key_press(event):
+    """Tuşa basma olayını işlemek için fonksiyon"""
+    if event.char == 'q':
+        root.quit()
+
+def reset_camera_and_speech():
+    global cap, hands, user_text
+    cap.release()
+    user_text = ""
+    output_label.configure(text="")
+    initialize_camera()
+    main_loop()
+
+def initialize_camera():
+    global cap, hands, mp_hands
+    cap = cv2.VideoCapture(0)
+    mp_hands = mp.solutions.hands
+    hands = mp_hands.Hands()
+    return cap.isOpened()
+
+def main_loop():
+    global user_text
+    speech_to_text_turkish()
+
+    while cap.isOpened():
+        # Kameradan görüntü al
+        ret, frame = cap.read()
+        if not ret:
+            break
         
-    # Check if 'q' key is pressed to break out of the loop
-    key = cv2.waitKey(1)
-    if key & 0xFF == ord('a'):
-        break
+        # Görüntüyü ters çevir (aynalama)
+        frame = cv2.flip(frame, 1)
+        
+        # Renk uzayını BGR'den RGB'ye çevir
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # El algılama işlemi yap
+        result = hands.process(rgb_frame)
+        
+        # Tespit edilen elleri çiz
+        if result.multi_hand_landmarks:
+            for hand_landmarks in result.multi_hand_landmarks:
+                mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+        
+        # Tanınan metni görüntüye yazdır
+        if user_text:
+            cv2.putText(frame, user_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        
+        # OpenCV görüntüsünü tkinter'da göster
+        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        imgtk = ImageTk.PhotoImage(image=img)
+        camera_label.imgtk = imgtk
+        camera_label.configure(image=imgtk)
+
+        root.update_idletasks()
+        root.update()
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+# CustomTkinter GUI penceresini oluştur
+root = ctk.CTk()
+root.title("Konuşma Tanıma ve El Algılama")
+
+# Çıktı için etiket oluştur
+output_label = ctk.CTkLabel(root, text="")
+output_label.pack(pady=20)
+
+# Kamera görüntüsü için bir etiket oluştur
+camera_label = ctk.CTkLabel(root)
+camera_label.pack(pady=20)
+
+# Reset butonunu oluştur
+reset_button = ctk.CTkButton(root, text="Reset", command=reset_camera_and_speech)
+reset_button.pack(pady=20)
+
+# Tuşa basma olayını bağla
+root.bind("<KeyPress>", on_key_press)
+
+# MediaPipe ve OpenCV kullanarak el algılama işlemini başlat
+mp_drawing = mp.solutions.drawing_utils
+
+if initialize_camera():
+    root.after(0, main_loop)
+else:
+    output_label.configure(text="Kamera açılamadı!")
+
+root.mainloop()
