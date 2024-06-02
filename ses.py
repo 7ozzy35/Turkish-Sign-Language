@@ -2,7 +2,9 @@ import speech_recognition as sr
 import cv2
 import customtkinter as ctk
 import mediapipe as mp
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw, ImageFont
+import threading
+import numpy as np
 
 # Konuşmayı metne dönüştürmek için tanıyıcıyı başlat
 r = sr.Recognizer()
@@ -54,7 +56,8 @@ def reset_camera_and_speech():
     user_text = ""
     output_label.configure(text="")
     initialize_camera()
-    main_loop()
+    threading.Thread(target=main_loop).start()
+    threading.Thread(target=speech_to_text_turkish).start()
 
 def initialize_camera():
     global cap, hands, mp_hands
@@ -65,8 +68,6 @@ def initialize_camera():
 
 def main_loop():
     global user_text
-    speech_to_text_turkish()
-
     while cap.isOpened():
         # Kameradan görüntü al
         ret, frame = cap.read()
@@ -85,14 +86,22 @@ def main_loop():
         # Tespit edilen elleri çiz
         if result.multi_hand_landmarks:
             for hand_landmarks in result.multi_hand_landmarks:
-                mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                mp_drawing.draw_landmarks(rgb_frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
         
         # Tanınan metni görüntüye yazdır
         if user_text:
-            cv2.putText(frame, user_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+            # Pillow ile yazı yazma
+            pil_image = Image.fromarray(rgb_frame)
+            draw = ImageDraw.Draw(pil_image)
+            # Burada Türkçe karakterleri destekleyen bir font dosyası seçmelisiniz
+            font = ImageFont.truetype("arial.ttf", 32)
+            draw.text((10, 10), user_text, font=font, fill=(0, 255, 0))
+
+            # Pillow görüntüsünü tekrar OpenCV formatına çevir
+            rgb_frame = np.array(pil_image)
         
         # OpenCV görüntüsünü tkinter'da göster
-        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        img = Image.fromarray(rgb_frame)
         imgtk = ImageTk.PhotoImage(image=img)
         camera_label.imgtk = imgtk
         camera_label.configure(image=imgtk)
@@ -126,7 +135,8 @@ root.bind("<KeyPress>", on_key_press)
 mp_drawing = mp.solutions.drawing_utils
 
 if initialize_camera():
-    root.after(0, main_loop)
+    threading.Thread(target=main_loop).start()
+    threading.Thread(target=speech_to_text_turkish).start()
 else:
     output_label.configure(text="Kamera açılamadı!")
 
